@@ -246,7 +246,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const category = await Category.findOne({ id: parseInt(id) });
+    const category = await Category.findOne({ _id: id });
     if (!category) {
       return res.status(404).json({ 
         error: 'Category not found',
@@ -255,7 +255,7 @@ router.delete('/:id', async (req, res) => {
     }
     
     // Check if category has subcategories
-    const subcategories = await Category.find({ parentId: parseInt(id) });
+    const subcategories = await Category.find({_id });
     if (subcategories.length > 0) {
       return res.status(400).json({ 
         error: 'Cannot delete category',
@@ -263,7 +263,7 @@ router.delete('/:id', async (req, res) => {
       });
     }
     
-    await Category.deleteOne({ id: parseInt(id) });
+    await Category.deleteOne({ _id: id });
     res.json({ message: 'Category deleted successfully' });
   } catch (error) {
     console.error('Error deleting category:', error);

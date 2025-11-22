@@ -49,6 +49,45 @@ const customerSchema = new mongoose.Schema({
     enum: ['active', 'inactive'],
     default: 'active'
   },
+
+  // ✅ إضافة: حقل المجموعة
+  customerGroup: {
+    type: String,
+    enum: ['vip', 'regular', 'wholesale', 'retail', 'inactive'],
+    default: 'regular',
+    trim: true
+  },
+
+  loyaltyPoints: {
+    type: Number,
+    default: 0
+  },
+  loyaltyPointsReserved: {
+    type: Number,
+    default: 0
+  },
+
+  storeName: {
+    type: String,
+    trim: true
+  },
+  storeLink: {
+    type: String,
+    trim: true
+  },
+  storeLogo: {
+    type: String,
+    trim: true
+  },
+  storeImage: {
+    type: String,
+    trim: true
+  },
+  avatar: {
+    type: String,
+    trim: true
+  },
+  
   otp: {
     code: String,
     expiresAt: Date,

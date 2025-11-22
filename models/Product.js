@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-
+ 
 
 // Main Product Schema
 const productSchema = new mongoose.Schema({
@@ -48,14 +48,31 @@ const productSchema = new mongoose.Schema({
     maxlength: [300, 'English short description cannot be more than 300 characters'],
     default: ''
   },
-  
+   
   // Multilingual description fields
-  description: {
+description: [{
+  type: {
     type: String,
-    required: [true, 'Product description is required'],
+    enum: ['text', 'images'],
+    default: 'text'
+  },
+  text: {
+    type: String,
     trim: true,
     maxlength: [5000, 'Product description cannot be more than 5000 characters']
   },
+  images: [{
+    url: {
+      type: String,
+      trim: true
+    },
+    orientation: {
+      type: String,
+      enum: ['horizontal', 'vertical'],
+      default: 'horizontal'
+    }
+  }]
+}],
   description_ar: {
     type: String,
     trim: true,
@@ -406,7 +423,7 @@ const productSchema = new mongoose.Schema({
 productSchema.index({ id: 1 });
 productSchema.index({ categoryId: 1 });
 productSchema.index({ subcategoryId: 1 });
-productSchema.index({ name: 'text', description: 'text' });
+productSchema.index({ name: 'text', 'description.text': 'text' });
 productSchema.index({ price: 1 });
 productSchema.index({ isAvailable: 1 });
 productSchema.index({ isActive: 1 });
@@ -457,7 +474,7 @@ productSchema.methods.getLocalizedContent = function(language = 'ar') {
   return {
     name: this[`name_${lang}`] || this.name,
     shortDescription: this[`shortDescription_${lang}`] || this.shortDescription,
-    description: this[`description_${lang}`] || this.description,
+    description: this.description,
     seoTitle: this[`seoTitle_${lang}`] || this.seoTitle,
     seoDescription: this[`seoDescription_${lang}`] || this.seoDescription,
     metaTitle: this[`metaTitle_${lang}`] || this.metaTitle,
@@ -559,7 +576,10 @@ productSchema.pre('save', function(next) {
   }
   
   if (!this.seoDescription && this.description) {
-    this.seoDescription = this.description.substring(0, 160);
+    const baseText = Array.isArray(this.description)
+      ? this.description.map(b => (b && b.text) ? b.text : '').join(' ').trim()
+      : this.description;
+    this.seoDescription = baseText ? baseText.substring(0, 160) : '';
   }
   
   // Dynamic options can be set manually if needed

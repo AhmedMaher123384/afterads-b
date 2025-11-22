@@ -197,7 +197,7 @@ router.put('/:id', async (req, res) => {
 // Delete a comment
 router.delete('/:id', async (req, res) => {
   try {
-    const comment = await Comment.findOneAndDelete({ id: parseInt(req.params.id) });
+    const comment = await Comment.findOneAndDelete({ _id: req.params.id });
     
     if (!comment) {
       return res.status(404).json({ error: 'Comment not found' });

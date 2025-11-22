@@ -32,6 +32,9 @@ import wishlistRouter from './routes/wishlist.js';
 import bannersRouter from './routes/banners.js';
 import collectionsRouter from './routes/collections.js';
 import subcategoriesRouter from './routes/subcategories.js';
+import themecard from './routes/themecard.js';
+import visitsRouter from './routes/visits.js';
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -88,22 +91,25 @@ mongoose.connect(MONGODB_URI, {
 });
 
 // Routes
-app.use('/api/static-pages', staticPagesRouter);
-app.use('/api/auth', authRouter);
-app.use('/api/users', usersRouter);
-app.use('/api/customers', customersRouter);
-app.use('/api/comments', commentsRouter);
-app.use('/api/admin-pin', adminPinRouter);
-app.use('/api/blog-posts', blogPostsRouter);
-app.use('/api/categories', categoriesRouter);
-app.use('/api/products', productsRouter);
-app.use('/api/portfolios', portfoliosRouter);
-app.use('/api/portfolio-categories', portfolioCategoriesRouter);
-app.use('/api/cart', cartRouter);
-app.use('/api', wishlistRouter);
-app.use('/api/banners', bannersRouter);
-app.use('/api/collections', collectionsRouter);
-app.use('/api/subcategories', subcategoriesRouter);
+// app.use('/api/static-pages', staticPagesRouter);
+// app.use('/api/auth', authRouter);
+// app.use('/api/users', usersRouter);
+// app.use('/api/customers', customersRouter);
+// app.use('/api/comments', commentsRouter);
+// app.use('/api/admin-pin', adminPinRouter);
+// app.use('/api/blog-posts', blogPostsRouter);
+// app.use('/api/categories', categoriesRouter);
+// app.use('/api/products', productsRouter);
+// app.use('/api/portfolios', portfoliosRouter);
+// app.use('/api/portfolio-categories', portfolioCategoriesRouter);
+// app.use('/api/cart', cartRouter);
+// app.use('/api', wishlistRouter);
+// app.use('/api/banners', bannersRouter);
+// app.use('/api/collections', collectionsRouter);
+// app.use('/api/subcategories', subcategoriesRouter);
+app.use('/api/theme-card', themecard); 
+app.use('/api/visits', visitsRouter);
+
 
 // Multer error handling middleware
 app.use((error, req, res, next) => {

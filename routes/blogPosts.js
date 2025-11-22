@@ -63,7 +63,6 @@ router.get('/', async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
     
     const posts = await BlogPost.find(query)
-      .select('id title slug excerpt content featuredImage author categories createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum)
@@ -196,12 +195,22 @@ router.post('/', uploadImage, async (req, res) => {
     });
     
     // Validate required fields
-    if (!title || !excerpt || !content || !author) {
+    let parsedContent = [];
+    try {
+      parsedContent = content ? (typeof content === 'string' ? JSON.parse(content) : content) : [];
+    } catch (e) {
+      return res.status(400).json({ 
+        error: 'Invalid content format',
+        message: 'Content must be a valid JSON array'
+      });
+    }
+
+    if (!title || !excerpt || !Array.isArray(parsedContent) || parsedContent.length === 0 || !author) {
       console.log('❌ Validation failed - missing required fields');
       return res.status(400).json({ 
         error: 'Missing required fields',
-        message: 'Title, excerpt, content, and author are required',
-        received: { title, excerpt, content, author }
+        message: 'Title, excerpt, content blocks, and author are required',
+        received: { title, excerpt, content: parsedContent, author }
       });
     }
     
@@ -258,7 +267,7 @@ router.post('/', uploadImage, async (req, res) => {
       title,
       slug: finalSlug,
       excerpt,
-      content,
+      content: parsedContent,
       featuredImage,
       featuredImageFile,
       author,
@@ -306,23 +315,23 @@ router.post('/', uploadImage, async (req, res) => {
 });
 
 // Update blog post
-router.put('/:id', uploadImage, async (req, res) => {
+router.put('/:_id', uploadImage, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { _id } = req.params;
     const { 
       title, slug, excerpt, content, author, categories,
       metaTitle, metaDescription, keywords, ogTitle, ogDescription, ogImage,
       twitterTitle, twitterDescription
     } = req.body;
     
-    console.log('📝 Updating blog post:', id);
+    console.log('📝 Updating blog post by _id:', _id);
     
-    // Find existing post
-    const existingPost = await BlogPost.findOne({ id: parseInt(id) });
+    // Find existing post by _id
+    const existingPost = await BlogPost.findById(_id);
     if (!existingPost) {
       return res.status(404).json({ 
         error: 'Blog post not found',
-        message: `No blog post found with ID: ${id}`
+        message: `No blog post found with ID: ${_id}`
       });
     }
     
@@ -344,29 +353,39 @@ router.put('/:id', uploadImage, async (req, res) => {
       }
     }
     
-    // Handle slug for updates - ensure it's unique or keep existing
+    // Handle slug for updates
     let finalSlug = slug || existingPost.slug;
     if (slug && slug.trim() && slug !== existingPost.slug) {
-      // Check if new slug already exists (excluding current post)
       const existingSlugPost = await BlogPost.findOne({ 
         slug: slug.trim().toLowerCase(),
-        id: { $ne: parseInt(id) }
+        _id: { $ne: _id } // ⚡ استخدام _id بدلاً من id
       });
       if (existingSlugPost) {
         console.log('⚠️ Slug already exists during update, keeping original:', slug);
-        finalSlug = existingPost.slug; // Keep the original slug
+        finalSlug = existingPost.slug;
       }
     }
     
     // Prepare update data
+    let parsedContentUpdate = existingPost.content;
+    if (content !== undefined) {
+      try {
+        parsedContentUpdate = content ? (typeof content === 'string' ? JSON.parse(content) : content) : [];
+      } catch (e) {
+        return res.status(400).json({ 
+          error: 'Invalid content format',
+          message: 'Content must be a valid JSON array'
+        });
+      }
+    }
+
     const updateData = {
       title: title || existingPost.title,
       slug: finalSlug,
       excerpt: excerpt || existingPost.excerpt,
-      content: content || existingPost.content,
+      content: parsedContentUpdate,
       author: author || existingPost.author,
       categories: parsedCategories,
-      // SEO fields
       metaTitle: metaTitle !== undefined ? metaTitle : existingPost.metaTitle,
       metaDescription: metaDescription !== undefined ? metaDescription : existingPost.metaDescription,
       keywords: keywords !== undefined ? keywords : existingPost.keywords,
@@ -389,8 +408,8 @@ router.put('/:id', uploadImage, async (req, res) => {
       };
     }
     
-    const updatedPost = await BlogPost.findOneAndUpdate(
-      { id: parseInt(id) },
+    const updatedPost = await BlogPost.findByIdAndUpdate(
+      _id, // ⚡ استخدام _id مباشرة
       updateData,
       { new: true, runValidators: true }
     );
@@ -422,7 +441,7 @@ router.delete('/:id', async (req, res) => {
     const { id } = req.params;
     console.log('🗑️ Deleting blog post:', id);
     
-    const post = await BlogPost.findOneAndDelete({ id: parseInt(id) });
+    const post = await BlogPost.findOneAndDelete({ _id: id });
     if (!post) {
       return res.status(404).json({ 
         error: 'Blog post not found',

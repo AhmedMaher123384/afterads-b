@@ -26,11 +26,24 @@ const blogPostSchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, 'Excerpt cannot be more than 500 characters']
   },
-  content: {
-    type: String,
-    required: [true, 'Blog post content is required'],
-    trim: true
-  },
+    content: [{
+      text: {
+        type: String,
+        trim: true
+      },
+      images: [{
+        url: {
+          type: String,
+          trim: true,
+          required: true
+        },
+        orientation: {
+          type: String,
+          enum: ['horizontal', 'vertical'],
+          default: 'horizontal'
+        }
+      }]
+    }],
   featuredImage: {
     type: String,
     trim: true,
@@ -111,10 +124,11 @@ const blogPostSchema = new mongoose.Schema({
 });
 
 // Essential indexes only
-blogPostSchema.index({ id: 1 });
-blogPostSchema.index({ slug: 1 });
+// blogPostSchema.index({ id: 1 });
+// blogPostSchema.index({ slug: 1 });
 blogPostSchema.index({ createdAt: -1 });
 blogPostSchema.index({ categories: 1 });
+blogPostSchema.index({ 'content.text': 'text' });
 
 // Pre-save middleware to generate slug if not provided
 blogPostSchema.pre('save', async function(next) {

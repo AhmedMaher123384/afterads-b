@@ -423,23 +423,26 @@ router.post('/', uploadFiles, async (req, res) => {
       productOptions
     } = req.body;
     
-    console.log('🔍 Extracted fields:');
-    console.log('  name:', name);
-    console.log('  description:', description);
-    console.log('  price:', price);
-    console.log('  categoryId:', categoryId);
-    console.log('Received subcategoryId:', subcategoryId, 'Type:', typeof subcategoryId);
-    
+    let parsedDescription = [];
+    try {
+      parsedDescription = description ? (typeof description === 'string' ? JSON.parse(description) : description) : [];
+    } catch (e) {
+      return res.status(400).json({ 
+        error: 'Invalid description format',
+        message: 'Description must be a valid JSON array'
+      });
+    }
+
     // Validate required fields
-    if (!name || !description || !price || !categoryId || categoryId === '' || categoryId === 'null' || categoryId === 'undefined') {
+    if (!name || !Array.isArray(parsedDescription) || parsedDescription.length === 0 || !price || !categoryId || categoryId === '' || categoryId === 'null' || categoryId === 'undefined') {
       console.log('❌ Validation failed - missing required fields');
       console.log('  name:', name);
-      console.log('  description:', description);
+      console.log('  description:', parsedDescription);
       console.log('  price:', price);
       console.log('  categoryId:', categoryId);
       return res.status(400).json({ 
         error: 'Validation error',
-        message: 'Name, description, price, and category are required'
+        message: 'Name, description blocks, price, and category are required'
       });
     }
     
@@ -479,27 +482,7 @@ router.post('/', uploadFiles, async (req, res) => {
     const nextId = lastProduct ? lastProduct.id + 1 : 1;
     
     const subcategoryIdValue = subcategoryId ? parseInt(subcategoryId) : null;
-    console.log('Processed subcategoryId:', subcategoryIdValue);
-    console.log('About to create product with subcategoryId:', subcategoryIdValue);
-    
-    // Debug: Log the data being used to create the product
-    console.log('🔍 Creating product with data:');
-    console.log('  - id:', nextId);
-    console.log('  - name:', name);
-    console.log('  - name_ar:', name_ar);
-    console.log('  - name_en:', name_en);
-    console.log('  - description:', description);
-    console.log('  - description_ar:', description_ar);
-    console.log('  - description_en:', description_en);
-    console.log('  - price:', parseFloat(price));
-    console.log('  - categoryId:', parseInt(categoryId));
-    console.log('  - subcategoryId:', subcategoryIdValue);
-    console.log('  - mainImage:', processedMainImage);
-    console.log('  - detailedImages:', processedDetailedImages);
-    console.log('  - featured:', featured);
-    console.log('  - tags:', tags);
-    console.log('  - faqs:', faqs);
-    console.log('  - addOns:', addOns);
+ 
 
     const newProduct = new Product({
       id: nextId,
@@ -509,7 +492,7 @@ router.post('/', uploadFiles, async (req, res) => {
       shortDescription,
       shortDescription_ar: shortDescription_ar || '',
       shortDescription_en: shortDescription_en || '',
-      description,
+      description: parsedDescription,
       description_ar: description_ar || '',
       description_en: description_en || '',
       price: parseFloat(price),
@@ -579,10 +562,8 @@ router.post('/', uploadFiles, async (req, res) => {
     
     res.status(201).json(populatedProduct);
   } catch (error) {
-    console.error('❌ Error creating product:', error);
-    console.error('❌ Error name:', error.name);
-    console.error('❌ Error message:', error.message);
-    
+
+
     if (error.name === 'ValidationError') {
       console.error('❌ Validation errors details:');
       Object.keys(error.errors).forEach(field => {
@@ -656,26 +637,37 @@ router.put('/:id', uploadFiles, async (req, res) => {
       }
     }
 
-    // Update fields
-    Object.keys(updateData).forEach(key => {
-      if (updateData[key] !== undefined) {
-        if (key === 'price' || key === 'originalPrice') {
-          product[key] = parseFloat(updateData[key]);
-        } else if (key === 'categoryId') {
-          product[key] = parseInt(updateData[key]);
-        } else if (key === 'isAvailable') {
-          product[key] = Boolean(updateData[key]);
-        } else if (key === 'productOptions') {
-          product[key] = typeof updateData[key] === 'string' ? JSON.parse(updateData[key]) : updateData[key];
-        } else {
-          product[key] = updateData[key];
-        }
+  // Update fields
+Object.keys(updateData).forEach(key => {
+  if (updateData[key] !== undefined && updateData[key] !== null && updateData[key] !== '') {
+    if (key === 'price' || key === 'originalPrice') {
+      const parsedValue = parseFloat(updateData[key]);
+      // Only set if it's a valid number
+      if (!isNaN(parsedValue)) {
+        product[key] = parsedValue;
+      } else if (key === 'originalPrice') {
+        // If originalPrice is invalid, set it to null
+        product[key] = null;
       }
-    });
+    } else if (key === 'categoryId' || key === 'subcategoryId') {
+      const parsedValue = parseInt(updateData[key]);
+      if (!isNaN(parsedValue)) {
+        product[key] = parsedValue;
+      }
+    } else if (key === 'isAvailable' || key === 'isActive' || key === 'featured') {
+      product[key] = Boolean(updateData[key]);
+    } else if (key === 'productOptions' || key === 'faqs' || key === 'addOns' || key === 'description') {
+      product[key] = typeof updateData[key] === 'string' ? JSON.parse(updateData[key]) : updateData[key];
+    } else {
+      product[key] = updateData[key];
+    }
+  } else if (key === 'originalPrice' && (updateData[key] === '' || updateData[key] === null)) {
+    // Explicitly handle empty originalPrice
+    product[key] = null;
+  }
+});
     
-    console.log('Product object before save:', product);
-    console.log('subcategoryId before save:', product.subcategoryId);
-    
+
     const updatedProduct = await product.save();
     const populatedProduct = await Product.findOne({ id: updatedProduct.id }).populate('category');
     

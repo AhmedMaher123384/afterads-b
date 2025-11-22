@@ -94,16 +94,24 @@ router.post('/', async (req, res) => {
     console.log('🔍 Checking database connection...');
     
     // Validate required fields
-    if (!pageData.title || !pageData.content) {
+    let parsedContent = [];
+    try {
+      parsedContent = pageData.content ? (typeof pageData.content === 'string' ? JSON.parse(pageData.content) : pageData.content) : [];
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid content format: must be JSON array' });
+    }
+
+    if (!pageData.title || !Array.isArray(parsedContent) || parsedContent.length === 0) {
       return res.status(400).json({ 
-        error: 'Missing required fields: title, content' 
+        error: 'Missing required fields: title, content blocks' 
       });
     }
     
     // Check for unwanted console messages in content
-    if (pageData.content.includes('Download the React DevTools') || 
-        pageData.content.includes('React Router Future Flag Warning') ||
-        pageData.content.includes('react-router-dom.js')) {
+    const contentText = Array.isArray(parsedContent) ? parsedContent.map(b => (b && b.text) ? b.text : '').join(' ') : String(parsedContent || '');
+    if (contentText.includes('Download the React DevTools') || 
+        contentText.includes('React Router Future Flag Warning') ||
+        contentText.includes('react-router-dom.js')) {
       console.warn('🚫 Rejected content with console messages');
       return res.status(400).json({ 
         error: 'Invalid content: contains system messages' 
@@ -128,6 +136,7 @@ router.post('/', async (req, res) => {
     console.log('🔄 Creating new StaticPage instance...');
     const newPage = new StaticPage({
       ...pageData,
+      content: parsedContent,
       isActive: pageData.isActive !== undefined ? pageData.isActive : true,
       showInFooter: pageData.showInFooter !== undefined ? pageData.showInFooter : false
     });
@@ -189,6 +198,14 @@ router.put('/:id', async (req, res) => {
     }
     
     // Update page
+    if (pageData.content !== undefined) {
+      try {
+        page.content = typeof pageData.content === 'string' ? JSON.parse(pageData.content) : pageData.content;
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid content format: must be JSON array' });
+      }
+      delete pageData.content;
+    }
     Object.assign(page, pageData);
     const updatedPage = await page.save();
     

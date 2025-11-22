@@ -47,6 +47,8 @@ const orderSchema = new mongoose.Schema({
   // معلومات الكوبون
   couponCode: { type: String, default: '' },
   couponDiscount: { type: Number, default: 0 },
+  loyaltyRedeemed: { type: Number, default: 0 },
+  loyaltyEarned: { type: Number, default: 0 },
   
   // حالة الطلب
   status: { 
@@ -105,7 +107,7 @@ orderSchema.pre('save', async function(next) {
   
   // حساب الإجمالي النهائي إذا لم يكن محدد
   if (!this.total) {
-    this.total = this.subtotal - (this.discount || 0) - (this.couponDiscount || 0);
+    this.total = this.subtotal - (this.discount || 0) - (this.couponDiscount || 0) - (this.loyaltyRedeemed || 0);
   }
   
   this.updatedAt = new Date();

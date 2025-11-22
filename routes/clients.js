@@ -1,7 +1,21 @@
 import express from 'express';
+import multer from 'multer';
+import path from 'path';
 import Client from '../models/Client.js';
 
 const router = express.Router();
+
+// Configure multer for file upload
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'public/images/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage });
 
 // Get all clients
 router.get('/', async (req, res) => {
@@ -75,13 +89,14 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create new client
-router.post('/', async (req, res) => {
+router.post('/', upload.single('logo'), async (req, res) => {
   try {
     console.log('📝 Creating new client:', req.body);
+    console.log('📁 Uploaded file:', req.file);
     
     const clientData = {
       name: req.body.name,
-      logo: req.body.logo,
+      logo: req.file ? `/images/${req.file.filename}` : req.body.existingLogo || '',
       website: req.body.website || ''
     };
     
@@ -113,10 +128,11 @@ router.post('/', async (req, res) => {
 });
 
 // Update client
-router.put('/:id', async (req, res) => {
+router.put('/:id', upload.single('logo'), async (req, res) => {
   try {
     const { id } = req.params;
     console.log('📝 Updating client:', id, req.body);
+    console.log('📁 Uploaded file:', req.file);
     
     const client = await Client.findOne({ id: parseInt(id) });
     
@@ -127,13 +143,14 @@ router.put('/:id', async (req, res) => {
       });
     }
     
-    // Update fields - only allow name, logo, and website
-    const allowedFields = ['name', 'logo', 'website'];
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        client[field] = req.body[field];
-      }
-    });
+    // Update fields
+    if (req.body.name) client.name = req.body.name;
+    if (req.body.website !== undefined) client.website = req.body.website;
+    if (req.file) {
+      client.logo = `/images/${req.file.filename}`;
+    } else if (req.body.existingLogo) {
+      client.logo = req.body.existingLogo;
+    }
     
     const updatedClient = await client.save();
     
@@ -192,7 +209,5 @@ router.delete('/:id', async (req, res) => {
     });
   }
 });
-
-
 
 export default router;

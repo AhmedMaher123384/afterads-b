@@ -19,11 +19,24 @@ const staticPageSchema = new mongoose.Schema({
     lowercase: true,
     maxlength: [100, 'Page slug cannot be more than 100 characters']
   },
-  content: {
-    type: String,
-    required: [true, 'Page content is required'],
-    trim: true
-  },
+  content: [{
+    text: {
+      type: String,
+      trim: true
+    },
+    images: [{
+      url: {
+        type: String,
+        trim: true,
+        required: true
+      },
+      orientation: {
+        type: String,
+        enum: ['horizontal', 'vertical'],
+        default: 'horizontal'
+      }
+    }]
+  }],
   metaDescription: {
     type: String,
     trim: true,
@@ -75,7 +88,7 @@ staticPageSchema.index({ isActive: 1 });
 staticPageSchema.index({ showInFooter: 1 });
 staticPageSchema.index({ sortOrder: 1 });
 staticPageSchema.index({ createdAt: -1 });
-staticPageSchema.index({ title: 'text', content: 'text' });
+staticPageSchema.index({ title: 'text', 'content.text': 'text' });
 
 // Static methods
 staticPageSchema.statics.findBySlug = function(slug) {

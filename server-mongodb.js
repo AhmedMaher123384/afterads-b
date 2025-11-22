@@ -91,6 +91,12 @@ import authRoutes from './routes/auth.js';
 import adminPinRoutes from './routes/adminPin.js';
 import portfolioCategoriesRoutes from './routes/portfolioCategories.js';
 import portfoliosRoutes from './routes/portfolios.js';
+import themecard from './routes/themecard.js';
+import visits from './routes/visits.js';
+import themeWorks from './routes/themeWorks.js';
+import documentationsRoutes from './routes/documentations.js';
+import announcement from './routes/announcementBar.js';
+
 
 import subcategoriesRoutes from './routes/subcategories.js';
 import productsRoutes from './routes/products.js';
@@ -243,7 +249,7 @@ async function connectDB() {
 // ======================
 
 // Categories endpoints without /api/ prefix (for current production compatibility)
-app.get('/categories', async (req, res) => {
+app.get('/api/categories', async (req, res) => {
   try {
     const categories = await Category.find({ isActive: true }).sort({ createdAt: -1 });
     res.json(categories);
@@ -280,7 +286,17 @@ app.get('/api/categories/debug/all', async (req, res) => {
 
 app.get('/api/categories/:id', async (req, res) => {
   try {
-    const category = await Category.findOne({ id: parseInt(req.params.id), isActive: true });
+    const { id } = req.params;
+    let category;
+    
+    // ✅ لو ObjectId صحيح
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      category = await Category.findOne({ _id: id, isActive: true });
+    } else {
+      // ✅ لو رقم عادي
+      category = await Category.findOne({ id: parseInt(id) || id, isActive: true });
+    }
+    
     if (!category) {
       return res.status(404).json({ message: 'Category not found' });
     }
@@ -357,7 +373,7 @@ app.put('/api/categories/:id', uploadFiles, async (req, res) => {
     }
 
     const category = await Category.findOneAndUpdate(
-      { id: parseInt(req.params.id) },
+      { _id:  req.params.id },
       updateData,
       { new: true }
     );
@@ -375,319 +391,47 @@ app.put('/api/categories/:id', uploadFiles, async (req, res) => {
 
 app.delete('/api/categories/:id', async (req, res) => {
   try {
-    const categoryId = parseInt(req.params.id);
+    const categoryId = req.params.id;
     
-    // Check if category has products
-    const productCount = await Product.countDocuments({ categoryId, isActive: true });
+    // تحقق من صحة الـ ID
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({ message: 'معرف الفئة غير صالح' });
+    }
+
+    // أولاً: احصل على الفئة لمعرفة الـ id الرقمي
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ message: 'الفئة غير موجودة' });
+    }
+
+    // استخدم الـ id الرقمي للبحث في المنتجات
+    const productCount = await Product.countDocuments({ 
+      categoryId: category.id, // استخدم category.id (الرقم) وليس _id (ObjectId)
+      isActive: true 
+    });
+    
     if (productCount > 0) {
       return res.status(400).json({ 
-        message: `Cannot delete category. It has ${productCount} products.` 
+        message: `لا يمكن حذف الفئة. تحتوي على ${productCount} منتج نشط.` 
       });
     }
 
-    const category = await Category.findOneAndUpdate(
-      { id: categoryId },
+    // قم بتعطيل الفئة
+    const updatedCategory = await Category.findOneAndUpdate(
+      { _id: new mongoose.Types.ObjectId(categoryId) },
       { isActive: false },
       { new: true }
     );
 
-    if (!category) {
-      return res.status(404).json({ message: 'Category not found' });
-    }
-
-    res.json({ message: 'Category deleted successfully' });
+    res.json({ message: 'تم حذف الفئة بنجاح' });
   } catch (error) {
     console.error('Error in DELETE /api/categories/:id:', error);
-    res.status(500).json({ message: 'Failed to delete category' });
-  }
-});
-
-// ======================
-// PRODUCTS APIs - COMMENTED OUT TO USE routes/products.js
-// ======================
-/*
-app.get('/api/products', async (req, res) => {
-  try {
-    const products = await Product.find({ isActive: true }).sort({ createdAt: -1 });
-    res.json(products);
-  } catch (error) {
-    console.error('Error in GET /api/products:', error);
-    res.status(500).json({ message: 'Failed to fetch products' });
-  }
-});
-
-app.get('/api/products/:id', async (req, res) => {
-  try {
-    const product = await Product.findOne({ id: parseInt(req.params.id), isActive: true });
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
-    res.json(product);
-  } catch (error) {
-    console.error('Error in GET /api/products/:id:', error);
-    res.status(500).json({ message: 'Failed to fetch product' });
-  }
-});
-
-app.get('/api/products/category/:categoryId', async (req, res) => {
-  try {
-    const products = await Product.find({ 
-      categoryId: parseInt(req.params.categoryId), 
-      isActive: true 
-    }).sort({ createdAt: -1 });
-    res.json(products);
-  } catch (error) {
-    console.error('Error in GET /api/products/category/:categoryId:', error);
-    res.status(500).json({ message: 'Failed to fetch products by category' });
-  }
-});
-
-app.post('/api/products', uploadFiles, async (req, res) => {
-  try {
-    console.log('Creating product with data:', req.body);
-    console.log('Files received:', req.files);
-    
-    const { 
-      name, 
-      shortDescription, 
-      description, 
-      price, 
-      originalPrice, 
-      stock, 
-      categoryId, 
-      subcategoryId,
-      isActive,
-      faqs,
-      addOns,
-      seoTitle,
-      seoDescription,
-      metaTitle,
-      metaDescription,
-      // Multilingual fields
-      name_ar,
-      name_en,
-      shortDescription_ar,
-      shortDescription_en,
-      description_ar,
-      description_en,
-      seoTitle_ar,
-      seoTitle_en,
-      seoDescription_ar,
-      seoDescription_en,
-      metaTitle_ar,
-      metaTitle_en,
-      metaDescription_ar,
-      metaDescription_en
-    } = req.body;
-    
-    const mainImageFile = req.files?.find(f => f.fieldname === 'mainImage');
-    const detailedImageFiles = req.files?.filter(f => f.fieldname === 'detailedImages') || [];
-
-    // Generate unique ID for the product
-    const lastProduct = await Product.findOne().sort({ id: -1 });
-    const newId = lastProduct ? lastProduct.id + 1 : 1;
-
-    // Parse FAQs if provided
-    let parsedFaqs = [];
-    if (faqs) {
-      try {
-        parsedFaqs = typeof faqs === 'string' ? JSON.parse(faqs) : faqs;
-      } catch (e) {
-        console.error('Error parsing FAQs:', e);
-      }
-    }
-
-    // Parse Add-ons if provided
-    let parsedAddOns = [];
-    if (addOns) {
-      try {
-        parsedAddOns = typeof addOns === 'string' ? JSON.parse(addOns) : addOns;
-      } catch (e) {
-        console.error('Error parsing Add-ons:', e);
-      }
-    }
-
-    const product = new Product({
-      id: newId,
-      name,
-      shortDescription: shortDescription || '',
-      description: description || '',
-      price: parseFloat(price),
-      originalPrice: originalPrice && parseFloat(originalPrice) > 0 ? parseFloat(originalPrice) : null,
-      stock: parseInt(stock) || 0,
-      categoryId: parseInt(categoryId),
-      subcategoryId: subcategoryId ? parseInt(subcategoryId) : null,
-      isActive: isActive !== undefined ? isActive === 'true' || isActive === true : true,
-      faqs: parsedFaqs,
-      addOns: parsedAddOns,
-      seoTitle: seoTitle || '',
-      seoDescription: seoDescription || '',
-      metaTitle: metaTitle || '',
-      metaDescription: metaDescription || '',
-      // Multilingual fields
-      name_ar: name_ar || '',
-      name_en: name_en || '',
-      shortDescription_ar: shortDescription_ar || '',
-      shortDescription_en: shortDescription_en || '',
-      description_ar: description_ar || '',
-      description_en: description_en || '',
-      seoTitle_ar: seoTitle_ar || '',
-      seoTitle_en: seoTitle_en || '',
-      seoDescription_ar: seoDescription_ar || '',
-      seoDescription_en: seoDescription_en || '',
-      metaTitle_ar: metaTitle_ar || '',
-      metaTitle_en: metaTitle_en || '',
-      metaDescription_ar: metaDescription_ar || '',
-      metaDescription_en: metaDescription_en || '',
-      mainImage: mainImageFile ? `/images/${mainImageFile.filename}` : '',
-      detailedImages: detailedImageFiles.map(file => `/images/${file.filename}`)
+    res.status(500).json({ 
+      message: 'فشل في حذف الفئة',
+      error: error.message 
     });
-
-    await product.save();
-    res.status(201).json(product);
-  } catch (error) {
-    console.error('Error in POST /api/products:', error);
-    res.status(500).json({ message: 'Failed to create product', error: error.message });
   }
 });
-
-app.put('/api/products/:id', uploadFiles, async (req, res) => {
-  try {
-    const { 
-      name, 
-      shortDescription, 
-      description, 
-      price, 
-      originalPrice, 
-      stock, 
-      categoryId,
-      subcategoryId, 
-      isActive,
-      faqs,
-      addOns,
-      seoTitle,
-      seoDescription,
-      metaTitle,
-      metaDescription,
-      // Multilingual fields
-      name_ar,
-      name_en,
-      shortDescription_ar,
-      shortDescription_en,
-      description_ar,
-      description_en,
-      seoTitle_ar,
-      seoTitle_en,
-      seoDescription_ar,
-      seoDescription_en,
-      metaTitle_ar,
-      metaTitle_en,
-      metaDescription_ar,
-      metaDescription_en
-    } = req.body;
-    
-    const mainImageFile = req.files?.find(f => f.fieldname === 'mainImage');
-    const detailedImageFiles = req.files?.filter(f => f.fieldname === 'detailedImages') || [];
-
-    // Parse FAQs if provided
-    let parsedFaqs = [];
-    if (faqs) {
-      try {
-        parsedFaqs = typeof faqs === 'string' ? JSON.parse(faqs) : faqs;
-      } catch (e) {
-        console.error('Error parsing FAQs:', e);
-      }
-    }
-
-    // Parse Add-ons if provided
-    let parsedAddOns = [];
-    if (addOns) {
-      try {
-        parsedAddOns = typeof addOns === 'string' ? JSON.parse(addOns) : addOns;
-      } catch (e) {
-        console.error('Error parsing Add-ons:', e);
-      }
-    }
-
-    const updateData = {
-      name,
-      shortDescription: shortDescription || '',
-      description: description || '',
-      price: parseFloat(price),
-      originalPrice: originalPrice && parseFloat(originalPrice) > 0 ? parseFloat(originalPrice) : null,
-      stock: parseInt(stock) || 0,
-      categoryId: parseInt(categoryId),
-      subcategoryId: subcategoryId ? parseInt(subcategoryId) : null,
-      isActive: isActive !== undefined ? isActive === 'true' || isActive === true : true,
-      faqs: parsedFaqs,
-      addOns: parsedAddOns,
-      seoTitle: seoTitle || '',
-      seoDescription: seoDescription || '',
-      metaTitle: metaTitle || '',
-      metaDescription: metaDescription || '',
-      // Multilingual fields
-      name_ar: name_ar || '',
-      name_en: name_en || '',
-      shortDescription_ar: shortDescription_ar || '',
-      shortDescription_en: shortDescription_en || '',
-      description_ar: description_ar || '',
-      description_en: description_en || '',
-      seoTitle_ar: seoTitle_ar || '',
-      seoTitle_en: seoTitle_en || '',
-      seoDescription_ar: seoDescription_ar || '',
-      seoDescription_en: seoDescription_en || '',
-      metaTitle_ar: metaTitle_ar || '',
-      metaTitle_en: metaTitle_en || '',
-      metaDescription_ar: metaDescription_ar || '',
-      metaDescription_en: metaDescription_en || ''
-    };
-
-    if (mainImageFile) {
-      updateData.mainImage = `/images/${mainImageFile.filename}`;
-    }
-
-    if (detailedImageFiles.length > 0) {
-      updateData.detailedImages = detailedImageFiles.map(file => `/images/${file.filename}`);
-    }
-
-    const product = await Product.findOneAndUpdate(
-      { id: parseInt(req.params.id) },
-      updateData,
-      { new: true }
-    );
-
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
-
-    res.json(product);
-  } catch (error) {
-    console.error('Error in PUT /api/products/:id:', error);
-    res.status(500).json({ message: 'Failed to update product' });
-  }
-});
-
-app.delete('/api/products/:id', async (req, res) => {
-  try {
-    const product = await Product.findOneAndUpdate(
-      { id: parseInt(req.params.id) },
-      { isActive: false },
-      { new: true }
-    );
-
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
-
-    res.json({ message: 'Product deleted successfully' });
-  } catch (error) {
-    console.error('Error in DELETE /api/products/:id:', error);
-    res.status(500).json({ message: 'Failed to delete product' });
-  }
-});
-*/
-
-// Get default options for product type
 
 
 // ======================
@@ -809,9 +553,29 @@ app.put('/api/orders/:id/status', authenticateToken, requireRole(['admin', 'staf
     const { status } = req.body;
     const orderId = parseInt(req.params.id);
     
+    // التحقق من صحة الحالة
+    const validStatuses = ['pending', 'confirmed', 'preparing', 'delivered', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'حالة غير صالحة' 
+      });
+    }
+    
     const order = await Order.findOne({ id: orderId });
     if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'الطلب غير موجود' 
+      });
+    }
+    
+    // منع تغيير الحالة بعد الاستلام
+    if (order.status === 'delivered' && status !== 'delivered') {
+      return res.status(400).json({
+        success: false,
+        message: 'لا يمكن تغيير حالة الطلب بعد الاستلام'
+      });
     }
     
     const previousStatus = order.status;
@@ -821,13 +585,48 @@ app.put('/api/orders/:id/status', authenticateToken, requireRole(['admin', 'staf
     }
     
     await order.save();
+
+    if (order.status === 'delivered') {
+      try {
+        if (order.customerEmail) {
+          const customer = await Customer.findOne({ email: order.customerEmail.toLowerCase() });
+          if (customer) {
+            if (!order.loyaltyEarned || order.loyaltyEarned === 0) {
+              const rate = 0.05;
+              const earned = Math.floor((order.total || 0) * rate);
+              customer.loyaltyPoints = (customer.loyaltyPoints || 0) + earned;
+              order.loyaltyEarned = earned;
+              await order.save();
+            }
+            await customer.save();
+          }
+        }
+      } catch (e) {
+        console.error('❌ Error finalizing loyalty points:', e);
+      }
+    }
+    if (order.status === 'cancelled') {
+      try {
+        if (order.customerEmail) {
+          const customer = await Customer.findOne({ email: order.customerEmail.toLowerCase() });
+          if (customer) {
+            const redeemed = order.loyaltyRedeemed || 0;
+            if (redeemed > 0 && previousStatus !== 'cancelled') {
+              customer.loyaltyPoints = (customer.loyaltyPoints || 0) + redeemed;
+              await customer.save();
+            }
+          }
+        }
+      } catch (e) {
+        console.error('❌ Error releasing reserved loyalty points:', e);
+      }
+    }
     
     // تسجيل نشاط تحديث حالة الطلب
     const statusMap = {
       'pending': 'في الانتظار',
       'confirmed': 'مؤكد',
       'preparing': 'قيد التحضير',
-      'shipped': 'تم الشحن',
       'delivered': 'تم التسليم',
       'cancelled': 'ملغي'
     };
@@ -840,19 +639,28 @@ app.put('/api/orders/:id/status', authenticateToken, requireRole(['admin', 'staf
       order._id,
       order.id,
       `تحويل الطلب من ${statusMap[previousStatus] || previousStatus} إلى ${statusMap[status] || status}`,
-      null,
+      previousStatus,
       status,
       `تحديث حالة الطلب رقم ${order.id}`,
       req
     );
     
-    res.json(order);
+    console.log('✅ Order status updated:', { orderId, previousStatus, newStatus: status });
+    
+    res.json({ 
+      success: true, 
+      message: 'تم تحديث حالة الطلب بنجاح',
+      order 
+    });
   } catch (error) {
     console.error('Error in PUT /api/orders/:id/status:', error);
-    res.status(500).json({ message: 'Failed to update order status' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'فشل في تحديث حالة الطلب',
+      error: error.message 
+    });
   }
 });
-
 // تحديث ملاحظات الطلب
 app.put('/api/orders/:id/notes', authenticateToken, requireRole(['admin', 'staff']), async (req, res) => {
   try {
@@ -893,13 +701,24 @@ app.put('/api/orders/:id/notes', authenticateToken, requireRole(['admin', 'staff
 });
 
 // حذف طلب
-app.delete('/api/orders/:id', async (req, res) => {
+// حذف طلب
+app.delete('/api/orders/:id', authenticateToken, requireRole(['admin', 'staff']), async (req, res) => {
   try {
     const orderId = parseInt(req.params.id);
     
+    if (!orderId || isNaN(orderId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'رقم الطلب غير صالح' 
+      });
+    }
+    
     const order = await Order.findOne({ id: orderId });
     if (!order) {
-      return res.status(404).json({ message: 'الطلب غير موجود' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'الطلب غير موجود' 
+      });
     }
     
     // تسجيل نشاط حذف الطلب قبل الحذف
@@ -924,13 +743,22 @@ app.delete('/api/orders/:id', async (req, res) => {
     );
     
     await Order.deleteOne({ id: orderId });
-    res.json({ message: 'تم حذف الطلب بنجاح' });
+    
+    console.log('✅ Order deleted successfully:', orderId);
+    
+    res.json({ 
+      success: true, 
+      message: 'تم حذف الطلب بنجاح' 
+    });
   } catch (error) {
     console.error('Error in DELETE /api/orders/:id:', error);
-    res.status(500).json({ message: 'فشل في حذف الطلب' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'فشل في حذف الطلب',
+      error: error.message 
+    });
   }
 });
-
 // إحصائيات الطلبات
 app.get('/api/orders/stats', async (req, res) => {
   try {
@@ -972,7 +800,7 @@ app.get('/api/coupons', async (req, res) => {
 
 app.get('/api/coupons/:id', async (req, res) => {
   try {
-    const coupon = await Coupon.findOne({ id: parseInt(req.params.id) });
+    const coupon = await Coupon.findOne({ _id: req.params.id });
     if (!coupon) {
       return res.status(404).json({ message: 'Coupon not found' });
     }
@@ -1007,7 +835,7 @@ app.post('/api/coupons', async (req, res) => {
 app.put('/api/coupons/:id', async (req, res) => {
   try {
     const coupon = await Coupon.findOneAndUpdate(
-      { id: parseInt(req.params.id) },
+      { _id: req.params.id },
       req.body,
       { new: true }
     );
@@ -1025,7 +853,7 @@ app.put('/api/coupons/:id', async (req, res) => {
 
 app.delete('/api/coupons/:id', async (req, res) => {
   try {
-    const coupon = await Coupon.findOneAndDelete({ id: parseInt(req.params.id) });
+    const coupon = await Coupon.findOneAndDelete({ _id: req.params.id });
 
     if (!coupon) {
       return res.status(404).json({ message: 'Coupon not found' });
@@ -1249,164 +1077,164 @@ app.get('/api/wishlist/check/:productId', async (req, res) => {
 // ======================
 // CUSTOMERS APIs
 // ======================
-app.get('/api/customers', async (req, res) => {
-  try {
-    const customers = await Customer.find({ status: 'active' }).sort({ createdAt: -1 });
+// app.get('/api/customers', async (req, res) => {
+//   try {
+//     const customers = await Customer.find({ status: 'active' }).sort({ createdAt: -1 });
     
-    // Add cart, wishlist and orders stats
-    const customersWithStats = await Promise.all(customers.map(async (customer) => {
-      // حساب مجموع الكميات في السلة بدلاً من عدد المنتجات فقط
-      const cartItems = await Cart.find({ userId: customer.id.toString() });
-      const cartItemsCount = cartItems.reduce((total, item) => total + (item.quantity || 1), 0);
-      const wishlistItemsCount = await Wishlist.countDocuments({ userId: customer.id.toString() });
-      const totalOrders = await Order.countDocuments({ customerEmail: customer.email });
+//     // Add cart, wishlist and orders stats
+//     const customersWithStats = await Promise.all(customers.map(async (customer) => {
+//       // حساب مجموع الكميات في السلة بدلاً من عدد المنتجات فقط
+//       const cartItems = await Cart.find({ userId: customer.id.toString() });
+//       const cartItemsCount = cartItems.reduce((total, item) => total + (item.quantity || 1), 0);
+//       const wishlistItemsCount = await Wishlist.countDocuments({ userId: customer.id.toString() });
+//       const totalOrders = await Order.countDocuments({ customerEmail: customer.email });
       
-      return {
-        ...customer.toObject(),
-        cartItemsCount,
-        wishlistItemsCount,
-        totalOrders,
-        hasCart: cartItemsCount > 0,
-        hasWishlist: wishlistItemsCount > 0
-      };
-    }));
+//       return {
+//         ...customer.toObject(),
+//         cartItemsCount,
+//         wishlistItemsCount,
+//         totalOrders,
+//         hasCart: cartItemsCount > 0,
+//         hasWishlist: wishlistItemsCount > 0
+//       };
+//     }));
 
-    res.json(customersWithStats);
-  } catch (error) {
-    console.error('Error in GET /api/customers:', error);
-    res.status(500).json({ message: 'Failed to fetch customers' });
-  }
-});
+//     res.json(customersWithStats);
+//   } catch (error) {
+//     console.error('Error in GET /api/customers:', error);
+//     res.status(500).json({ message: 'Failed to fetch customers' });
+//   }
+// });
 
-// Customer stats endpoint
-app.get('/api/customers/stats', async (req, res) => {
-  try {
-    const totalCustomers = await Customer.countDocuments({ status: 'active' });
-    const activeCustomers = await Customer.countDocuments({ status: 'active' });
+// // Customer stats endpoint
+// app.get('/api/customers/stats', async (req, res) => {
+//   try {
+//     const totalCustomers = await Customer.countDocuments({ status: 'active' });
+//     const activeCustomers = await Customer.countDocuments({ status: 'active' });
     
-    // حساب مجموع الكميات في جميع السلال بدلاً من عدد المستندات
-    const allCartItems = await Cart.find({});
-    const totalCartItems = allCartItems.reduce((total, item) => total + (item.quantity || 1), 0);
-    const totalWishlistItems = await Wishlist.countDocuments();
+//     // حساب مجموع الكميات في جميع السلال بدلاً من عدد المستندات
+//     const allCartItems = await Cart.find({});
+//     const totalCartItems = allCartItems.reduce((total, item) => total + (item.quantity || 1), 0);
+//     const totalWishlistItems = await Wishlist.countDocuments();
     
-    // Calculate averages
-    const avgCartItems = totalCustomers > 0 ? (totalCartItems / totalCustomers).toFixed(1) : 0;
-    const avgWishlistItems = totalCustomers > 0 ? (totalWishlistItems / totalCustomers).toFixed(1) : 0;
+//     // Calculate averages
+//     const avgCartItems = totalCustomers > 0 ? (totalCartItems / totalCustomers).toFixed(1) : 0;
+//     const avgWishlistItems = totalCustomers > 0 ? (totalWishlistItems / totalCustomers).toFixed(1) : 0;
 
-    res.json({
-      totalCustomers,
-      activeCustomers,
-      totalCartItems,
-      totalWishlistItems,
-      avgCartItems: parseFloat(avgCartItems),
-      avgWishlistItems: parseFloat(avgWishlistItems)
-    });
-  } catch (error) {
-    console.error('Error in GET /api/customers/stats:', error);
-    res.status(500).json({ message: 'Failed to fetch customer stats' });
-  }
-});
+//     res.json({
+//       totalCustomers,
+//       activeCustomers,
+//       totalCartItems,
+//       totalWishlistItems,
+//       avgCartItems: parseFloat(avgCartItems),
+//       avgWishlistItems: parseFloat(avgWishlistItems)
+//     });
+//   } catch (error) {
+//     console.error('Error in GET /api/customers/stats:', error);
+//     res.status(500).json({ message: 'Failed to fetch customer stats' });
+//   }
+// });
 
-app.post('/api/customers', async (req, res) => {
-  try {
-    const customer = new Customer(req.body);
-    await customer.save();
-    res.status(201).json(customer);
-  } catch (error) {
-    console.error('Error in POST /api/customers:', error);
-    res.status(500).json({ message: 'Failed to create customer' });
-  }
-});
+// app.post('/api/customers', async (req, res) => {
+//   try {
+//     const customer = new Customer(req.body);
+//     await customer.save();
+//     res.status(201).json(customer);
+//   } catch (error) {
+//     console.error('Error in POST /api/customers:', error);
+//     res.status(500).json({ message: 'Failed to create customer' });
+//   }
+// });
 
-// Send OTP
-app.post('/api/customers/send-otp', async (req, res) => {
-  try {
-    const { email } = req.body;
+// // Send OTP
+// app.post('/api/customers/send-otp', async (req, res) => {
+//   try {
+//     const { email } = req.body;
     
-    let customer = await Customer.findOne({ email });
-    if (!customer) {
-      customer = new Customer({
-        email,
-        name: 'عميل جديد',
-        phone: ''
-      });
-    }
+//     let customer = await Customer.findOne({ email });
+//     if (!customer) {
+//       customer = new Customer({
+//         email,
+//         name: 'عميل جديد',
+//         phone: ''
+//       });
+//     }
 
-    const otp = customer.generateOTP();
-    await customer.save();
+//     const otp = customer.generateOTP();
+//     await customer.save();
 
-    // إرسال OTP عبر الإيميل الحقيقي
-    console.log(`🔄 Sending OTP to ${email}: ${otp}`);
-    const emailResult = await sendOTPEmail(email, otp, customer.name);
+//     // إرسال OTP عبر الإيميل الحقيقي
+//     console.log(`🔄 Sending OTP to ${email}: ${otp}`);
+//     const emailResult = await sendOTPEmail(email, otp, customer.name);
     
-    if (emailResult.success) {
-      console.log(`✅ OTP Email sent successfully to ${email}`);
-      res.json({ 
-        message: 'تم إرسال كود التحقق إلى إيميلك بنجاح ✉️',
-        emailSent: true
-      });
-    } else {
-      console.error(`❌ Failed to send OTP email to ${email}:`, emailResult.error);
-      // في حالة فشل الإيميل، لا نزال نعطي الكود للمستخدم
-      console.log(`📋 Backup OTP for ${email}: ${otp}`);
-      res.json({ 
-        message: 'تم إنشاء كود التحقق (تحقق من الإيميل أو الكونسول)',
-        emailSent: false,
-        backupOtp: otp // للتطوير فقط
-      });
-    }
-  } catch (error) {
-    console.error('Error in POST /api/customers/send-otp:', error);
-    res.status(500).json({ message: 'Failed to send OTP' });
-  }
-});
+//     if (emailResult.success) {
+//       console.log(`✅ OTP Email sent successfully to ${email}`);
+//       res.json({ 
+//         message: 'تم إرسال كود التحقق إلى إيميلك بنجاح ✉️',
+//         emailSent: true
+//       });
+//     } else {
+//       console.error(`❌ Failed to send OTP email to ${email}:`, emailResult.error);
+//       // في حالة فشل الإيميل، لا نزال نعطي الكود للمستخدم
+//       console.log(`📋 Backup OTP for ${email}: ${otp}`);
+//       res.json({ 
+//         message: 'تم إنشاء كود التحقق (تحقق من الإيميل أو الكونسول)',
+//         emailSent: false,
+//         backupOtp: otp // للتطوير فقط
+//       });
+//     }
+//   } catch (error) {
+//     console.error('Error in POST /api/customers/send-otp:', error);
+//     res.status(500).json({ message: 'Failed to send OTP' });
+//   }
+// });
 
-// Verify OTP
-app.post('/api/customers/verify-otp', async (req, res) => {
-  try {
-    const { email, otp } = req.body;
+// // Verify OTP
+// app.post('/api/customers/verify-otp', async (req, res) => {
+//   try {
+//     const { email, otp } = req.body;
     
-    const customer = await Customer.findOne({ email });
-    if (!customer) {
-      return res.status(404).json({ message: 'العميل غير موجود' });
-    }
+//     const customer = await Customer.findOne({ email });
+//     if (!customer) {
+//       return res.status(404).json({ message: 'العميل غير موجود' });
+//     }
 
-    const result = customer.verifyOTP(otp);
-    if (!result.valid) {
-      return res.status(400).json({ message: result.message });
-    }
+//     const result = customer.verifyOTP(otp);
+//     if (!result.valid) {
+//       return res.status(400).json({ message: result.message });
+//     }
 
-    await customer.save();
-    res.json({ message: result.message, customer });
-  } catch (error) {
-    console.error('Error in POST /api/customers/verify-otp:', error);
-    res.status(500).json({ message: 'Failed to verify OTP' });
-  }
-});
+//     await customer.save();
+//     res.json({ message: result.message, customer });
+//   } catch (error) {
+//     console.error('Error in POST /api/customers/verify-otp:', error);
+//     res.status(500).json({ message: 'Failed to verify OTP' });
+//   }
+// });
 
-// Delete customer
-app.delete('/api/customers/:id', async (req, res) => {
-  try {
-    const customerId = parseInt(req.params.id);
+// // Delete customer
+// app.delete('/api/customers/:id', async (req, res) => {
+//   try {
+//     const customerId = req.params.id;
     
-    // حذف العميل من قاعدة البيانات
-    const result = await Customer.deleteOne({ id: customerId });
+//     // حذف العميل من قاعدة البيانات
+//     const result = await Customer.deleteOne({ _id: customerId });
     
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ error: 'العميل غير موجود' });
-    }
+//     if (result.deletedCount === 0) {
+//       return res.status(404).json({ error: 'العميل غير موجود' });
+//     }
     
-    // حذف السلة وقائمة الأمنيات المرتبطة بالعميل
-    await Cart.deleteMany({ userId: customerId });
-    await Wishlist.deleteMany({ userId: customerId });
+//     // حذف السلة وقائمة الأمنيات المرتبطة بالعميل
+//     await Cart.deleteMany({ userId: customerId });
+//     await Wishlist.deleteMany({ userId: customerId });
     
-    console.log(`✅ Customer ${customerId} deleted successfully`);
-    res.json({ message: 'تم حذف العميل بنجاح' });
-  } catch (error) {
-    console.error('❌ Error deleting customer:', error);
-    res.status(500).json({ error: 'فشل في حذف العميل' });
-  }
-});
+//     console.log(`✅ Customer ${customerId} deleted successfully`);
+//     res.json({ message: 'تم حذف العميل بنجاح' });
+//   } catch (error) {
+//     console.error('❌ Error deleting customer:', error);
+//     res.status(500).json({ error: 'فشل في حذف العميل' });
+//   }
+// });
 
 // ======================
 // REVIEWS APIs
@@ -1756,20 +1584,19 @@ app.get('/api/user/:userId/cart', async (req, res) => {
     const userId = req.params.userId;
     const items = await Cart.find({ userId }).sort({ createdAt: -1 });
     
-    // إضافة بيانات المنتج لكل عنصر
     const itemsWithProducts = await Promise.all(items.map(async (item) => {
       const product = await Product.findOne({ id: item.productId });
       return {
         id: item.id,
         productId: item.productId,
         quantity: item.quantity,
-        selectedOptions: item.selectedOptions || {},  // إضافة المواصفات المختارة
-        optionsPricing: item.optionsPricing || {},    // إضافة أسعار الخيارات
-        attachments: item.attachments || {},          // إضافة المرفقات
-        addOns: item.addOns || [],                    // إضافة المنتجات الإضافية
-        basePrice: item.basePrice || 0,              // إضافة السعر الأساسي
-        addOnsPrice: item.addOnsPrice || 0,          // إضافة سعر المنتجات الإضافية
-        totalPrice: item.totalPrice || 0,            // إضافة السعر الإجمالي
+        selectedOptions: item.selectedOptions || {},
+        optionsPricing: item.optionsPricing || {},
+        attachments: item.attachments || {},
+        addOns: item.addOns || [],
+        basePrice: item.basePrice || 0,
+        addOnsPrice: item.addOnsPrice || 0,
+        totalPrice: item.totalPrice || (item.price * item.quantity),
         product: product ? {
           id: product.id,
           name: product.name,
@@ -1779,15 +1606,98 @@ app.get('/api/user/:userId/cart', async (req, res) => {
           mainImage: product.mainImage,
           detailedImages: product.detailedImages || [],
           stock: product.stock,
-
         } : null
       };
     }));
-    
-    res.json(itemsWithProducts);
+
+    const subtotal = itemsWithProducts.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+
+    let customer = null;
+    const numericId = parseInt(userId);
+    if (!isNaN(numericId)) {
+      customer = await Customer.findOne({ id: numericId });
+    } else if (mongoose.Types.ObjectId.isValid(userId)) {
+      customer = await Customer.findById(userId);
+    }
+    const availablePoints = customer ? (customer.loyaltyPoints || 0) : 0;
+    const loyaltyDiscount = Math.min(availablePoints, subtotal);
+    const total = Math.max(subtotal - loyaltyDiscount, 0);
+
+    res.json({
+      items: itemsWithProducts,
+      subtotal,
+      loyaltyAvailable: availablePoints,
+      loyaltyDiscount,
+      total
+    });
   } catch (error) {
     console.error('Error in GET /api/user/:userId/cart:', error);
     res.status(500).json({ message: 'Failed to fetch cart' });
+  }
+});
+app.get('/api/user/:userId/cart/summary', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const applyLoyalty = String(req.query.applyLoyalty || '').toLowerCase() === 'true';
+    const loyaltyPointsToRedeemParam = req.query.loyaltyPointsToRedeem;
+    const requestedRedeem = loyaltyPointsToRedeemParam !== undefined ? parseInt(loyaltyPointsToRedeemParam) : undefined;
+
+    const items = await Cart.find({ userId }).sort({ createdAt: -1 });
+    const itemsWithProducts = await Promise.all(items.map(async (item) => {
+      const product = await Product.findOne({ id: item.productId });
+      return {
+        id: item.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        selectedOptions: item.selectedOptions || {},
+        optionsPricing: item.optionsPricing || {},
+        attachments: item.attachments || {},
+        addOns: item.addOns || [],
+        basePrice: item.basePrice || 0,
+        addOnsPrice: item.addOnsPrice || 0,
+        totalPrice: item.totalPrice || (item.price * item.quantity),
+        product: product ? {
+          id: product.id,
+          name: product.name,
+          description: product.description,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          mainImage: product.mainImage,
+          detailedImages: product.detailedImages || [],
+          stock: product.stock,
+        } : null
+      };
+    }));
+
+    const subtotal = itemsWithProducts.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+
+    let customer = null;
+    const numericId = parseInt(userId);
+    if (!isNaN(numericId)) {
+      customer = await Customer.findOne({ id: numericId });
+    } else if (mongoose.Types.ObjectId.isValid(userId)) {
+      customer = await Customer.findById(userId);
+    }
+
+    const availablePoints = customer ? (customer.loyaltyPoints || 0) : 0;
+    let loyaltyDiscount = 0;
+    if (applyLoyalty && availablePoints > 0 && subtotal > 0) {
+      const pointsRequested = (typeof requestedRedeem === 'number' && !isNaN(requestedRedeem)) ? requestedRedeem : availablePoints;
+      loyaltyDiscount = Math.min(pointsRequested, availablePoints, subtotal);
+    }
+
+    const total = Math.max(subtotal - loyaltyDiscount, 0);
+
+    res.json({
+      items: itemsWithProducts,
+      subtotal,
+      loyaltyAvailable: availablePoints,
+      loyaltyDiscount,
+      total
+    });
+  } catch (error) {
+    console.error('Error in GET /api/user/:userId/cart/summary:', error);
+    res.status(500).json({ message: 'Failed to fetch cart summary' });
   }
 });
 
@@ -1815,28 +1725,33 @@ app.post('/api/user/:userId/cart', async (req, res) => {
     
     if (existingItem) {
       existingItem.quantity += quantity;
-      // تحديث المرفقات إذا كانت موجودة
-      if (attachments && (attachments.text || attachments.images?.length > 0)) {
+      if (attachments && (attachments.text || (attachments.images && attachments.images.length > 0))) {
         existingItem.attachments = attachments;
       }
+      const bp = existingItem.basePrice || existingItem.price || 0;
+      const ap = existingItem.addOnsPrice || 0;
+      existingItem.totalPrice = (bp * existingItem.quantity) + ap;
       await existingItem.save();
       return res.json(existingItem);
     }
 
+    const bp = (typeof basePrice === 'number' ? basePrice : product.price) || 0;
+    const ap = (typeof addOnsPrice === 'number' ? addOnsPrice : 0) || 0;
+    const computedTotal = (bp * quantity) + ap;
     const cartItem = new Cart({
       userId,
       productId,
       productName: product.name,
-      price: totalPrice || product.price,
+      price: bp,
       quantity,
       image: product.mainImage,
       selectedOptions: selectedOptions || {},
       optionsPricing: optionsPricing || {},
       attachments: attachments || {},
       addOns: addOns || [],
-      basePrice: basePrice || product.price,
-      addOnsPrice: addOnsPrice || 0,
-      totalPrice: totalPrice || product.price
+      basePrice: bp,
+      addOnsPrice: ap,
+      totalPrice: typeof totalPrice === 'number' ? totalPrice : computedTotal
     });
 
     await cartItem.save();
@@ -1915,6 +1830,13 @@ app.put('/api/user/:userId/cart/:itemId', async (req, res) => {
       return res.status(404).json({ message: 'Cart item not found' });
     }
 
+    try {
+      const bp = item.basePrice || item.price || 0;
+      const ap = item.addOnsPrice || 0;
+      item.totalPrice = (bp * item.quantity) + ap;
+      await item.save();
+    } catch (e) {}
+
     console.log(`✅ Cart item ${itemId} updated successfully for user ${userId}`);
     console.log(`✅ Final item state:`, {
       id: item.id,
@@ -1931,6 +1853,7 @@ app.put('/api/user/:userId/cart/:itemId', async (req, res) => {
         id: item.id,
         productId: item.productId,
         quantity: item.quantity,
+        totalPrice: item.totalPrice,
         selectedOptions: item.selectedOptions,
         optionsPricing: item.optionsPricing,
         attachments: item.attachments
@@ -2163,14 +2086,13 @@ app.post('/api/upload-attachments', uploadFiles, async (req, res) => {
 // Checkout endpoint
 app.post('/api/checkout', async (req, res) => {
   try {
-    const { items, customerInfo, paymentMethod, total, subtotal, couponDiscount, appliedCoupon, paymentId, paymentStatus, userId, isGuestOrder } = req.body;
+    const { items, customerInfo, paymentMethod, total, subtotal, couponDiscount, appliedCoupon, paymentId, paymentStatus, userId, isGuestOrder, applyLoyalty, loyaltyPointsToRedeem } = req.body;
     
     console.log('💰 [Checkout] Creating order with data:', {
       customerInfo,
       itemsCount: items.length,
       total,
       subtotal,
-
       couponDiscount,
       paymentMethod,
       paymentStatus,
@@ -2208,8 +2130,8 @@ app.post('/api/checkout', async (req, res) => {
       totalPrice: item.totalPrice || (item.price * item.quantity),
       selectedOptions: item.selectedOptions || {},
       optionsPricing: item.optionsPricing || {},
-      productOptions: item.productOptions || [], // خيارات المنتج الجديدة
-      productOptionsPriceModifier: item.productOptionsPriceModifier || 0, // تعديل السعر من خيارات المنتج
+      productOptions: item.productOptions || [],
+      productOptionsPriceModifier: item.productOptionsPriceModifier || 0,
       productImage: item.productImage || '',
       attachments: item.attachments || {},
       addOns: item.addOns || [],
@@ -2220,13 +2142,35 @@ app.post('/api/checkout', async (req, res) => {
     // استخدام القيم المحسوبة من الفرونت إند أو حساب قيم احتياطية
     const orderSubtotal = subtotal || orderItems.reduce((sum, item) => sum + item.totalPrice, 0);
     const orderCouponDiscount = couponDiscount || 0;
-    const orderTotal = total || (orderSubtotal - orderCouponDiscount);
+    let orderTotal = total || (orderSubtotal - orderCouponDiscount);
+
+    let customer = null;
+    if (customerInfo && customerInfo.email) {
+      customer = await Customer.findOne({ email: (customerInfo.email || '').toLowerCase() });
+    }
+    if (!customer && userId) {
+      const numericId = parseInt(userId);
+      if (!isNaN(numericId)) {
+        customer = await Customer.findOne({ id: numericId });
+      }
+    }
+
+    let availablePoints = customer ? (customer.loyaltyPoints || 0) : 0;
+    const requestedFromBody = (typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem >= 0)
+      ? loyaltyPointsToRedeem
+      : (typeof req.body.loyaltyDiscount === 'number' ? req.body.loyaltyDiscount : undefined);
+    const applyFlag = (applyLoyalty === false) ? false : true;
+    let pointsToRedeem = 0;
+    if (applyFlag && availablePoints > 0) {
+      const requested = (requestedFromBody !== undefined) ? requestedFromBody : availablePoints;
+      pointsToRedeem = Math.min(requested, availablePoints, Math.max(orderTotal, 0));
+      orderTotal = Math.max(orderTotal - pointsToRedeem, 0);
+    }
 
     // معلومات الكوبون
     let couponCode = '';
     if (appliedCoupon && appliedCoupon.code) {
       couponCode = appliedCoupon.code;
-      // يمكن إضافة التحقق من الكوبون هنا إذا لزم الأمر
     }
 
     // إنشاء الطلب
@@ -2240,6 +2184,7 @@ app.post('/api/checkout', async (req, res) => {
       total: orderTotal,
       couponCode,
       couponDiscount: orderCouponDiscount,
+      loyaltyRedeemed: pointsToRedeem,
       paymentMethod: paymentMethod || 'cod',
       paymentStatus: paymentStatus || 'pending',
       notes: customerInfo.notes || ''
@@ -2252,6 +2197,31 @@ app.post('/api/checkout', async (req, res) => {
 
     // حفظ الطلب
     const savedOrder = await order.save();
+
+    console.log("customerId", customer?._id);
+
+    if (customer && customer._id && pointsToRedeem > 0) {
+      try {
+        customer.loyaltyPoints = Math.max((customer.loyaltyPoints || 0) - pointsToRedeem, 0);
+        await customer.save();
+        console.log('✅ [Checkout] Customer loyalty points deducted:', {
+          customerId: customer._id,
+          email: customer.email,
+          pointsRedeemed: pointsToRedeem,
+          newPoints: customer.loyaltyPoints
+        });
+      } catch (updateError) {
+        console.error('❌ [Checkout] Error updating loyalty points:', updateError);
+      }
+    }
+
+    const LOYALTY_EARN_RATE = 0.05;
+    let potentialEarn = 0;
+    if (paymentStatus === 'paid') {
+      potentialEarn = Math.floor(orderTotal * LOYALTY_EARN_RATE);
+      savedOrder.loyaltyEarned = potentialEarn;
+      await savedOrder.save();
+    }
     
     console.log('✅ [Checkout] Order created successfully:', {
       orderId: savedOrder.id,
@@ -2259,8 +2229,6 @@ app.post('/api/checkout', async (req, res) => {
       total: savedOrder.total,
       isGuest: !!isGuestOrder
     });
-
-    // تم إزالة تسجيل إنشاء الطلب حسب طلب المستخدم
 
     // إرسال استجابة النجاح مع كامل البيانات
     res.status(201).json({ 
@@ -2277,6 +2245,8 @@ app.post('/api/checkout', async (req, res) => {
         total: savedOrder.total,
         subtotal: savedOrder.subtotal,
         couponDiscount: savedOrder.couponDiscount,
+        loyaltyRedeemed: savedOrder.loyaltyRedeemed,
+        loyaltyEarned: savedOrder.loyaltyEarned,
         status: savedOrder.status,
         paymentMethod: savedOrder.paymentMethod,
         paymentStatus: savedOrder.paymentStatus,
@@ -2305,7 +2275,6 @@ app.post('/api/checkout', async (req, res) => {
     });
   }
 });
-
 // Update cart item options (alternative endpoint for options-only updates)
 app.put('/api/user/:userId/cart/update-options', async (req, res) => {
   try {
@@ -2362,6 +2331,7 @@ app.use('/api/invoices', invoiceRoutes);
 
 // Use static pages routes
 app.use('/api/static-pages', staticPagesRoutes);
+app.use('/api/documentations', documentationsRoutes);
 
 // Use blog posts routes
 app.use('/api/blog-posts', blogPostsRoutes);
@@ -2397,6 +2367,11 @@ app.use('/api/portfolios', portfoliosRoutes);
 
 app.use('/api/subcategories', subcategoriesRoutes);
 app.use('/api/products', productsRoutes);
+app.use('/api/theme-card', themecard); 
+app.use('/api/theme-works', themeWorks);
+app.use('/api/visits', visits); 
+app.use('/api/announcement-bar', announcement); 
+
 
 
 
