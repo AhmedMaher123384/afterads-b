@@ -169,7 +169,8 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'staff']), async (re
     const allowedFields = [
       'name', 'email', 'phone', 'city', 'address', 'password', 'status',
       'firstName', 'lastName', 'storeName', 'storeLink', 'storeLogo', 'storeImage', 'avatar',
-      'customerGroup' // ✅ إضافة هذا الحقل
+      'customerGroup',
+      'loyaltyPoints'
     ];
 
     allowedFields.forEach(field => {
